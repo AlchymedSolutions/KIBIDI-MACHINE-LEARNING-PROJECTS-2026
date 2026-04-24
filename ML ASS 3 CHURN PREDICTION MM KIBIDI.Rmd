@@ -1,0 +1,826 @@
+---
+title: "ML ASS3 CHURN PREDICTION"
+author: "KIBIDI"
+date: "2026-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Center for Data Analytics and
+Modeling
+Chuka University
+Machine Learning Assignment 3
+Multi-Model Classification for Customer Churn Prediction
+Course: Machine Learning Methods
+
+Instructor: Lumumba W. Victor
+Email: lumumbavictor172@gmail.com
+Date Issued: April 13, 2026
+Due Date: 24th April 2026
+Total Marks: 100
+
+Learning Objectives
+• Implement multiple classification algorithms in R (Logistic, KNN, SVM, RF)
+• Apply appropriate preprocessing for different model types
+• Create and use trainControl schemes for cross-validation
+• Evaluate and compare model performance using multiple metrics
+• Interpret model-specific outputs (coefficients, importance, support vectors)
+• Make evidence-based model selection recommendations
+Assignment 3
+CDAM- Machine Learning
+
+1 General Instructions
+• This assignment must be completed individually.
+• Submit your work as a PDF report and the R script (.R or .Rmd).
+• All code must be well-commented and reproducible (set seed = 2026).
+• Use the provided dataset: business_churn_data.RData.
+• Plots and tables must be clearly labeled with captions.
+• Late submissions will incur a penalty of 10% per day.
+• Plagiarism will result in zero marks for all parties involved.
+
+#Set working directory
+```{r}
+setwd("C:/Users/h6p/Desktop/ASSIGNMENTS")
+```
+
+3.1 Task 1: Data Import and Exploration (10 Marks)
+
+#3.1.1. Load all necessary libraries
+```{r}
+library(tidyverse)
+library(caret)
+library(pROC)
+library(e1071)
+library(class)
+library(randomForest)
+library(ggplot2)
+```
+
+#3.1.2.a) Import the dataset business_churn_data.RData using load().
+```{r}
+load('business_churn_data.RData')
+```
+
+
+#3.1.2.b) # Verify object loaded
+```{r}
+ls()
+```
+
+
+#3.1.3.a) Display the structure of the data (str()) 
+```{r}
+str(business_data)
+```
+
+
+#3.1.3.b) Display the summary statistics .
+```{r}
+(summary(business_data))
+```
+
+
+#3.1.4.a) Check for missing values per variable.
+```{r}
+na_count <- colSums(is.na(business_data))
+na_count
+```
+
+#3.1.4.a) Check for missing values percentage per variable.
+```{r}
+na_percent <- (na_count / nrow(business_data)) * 100
+na_percent
+```
+
+#3.1.4.c)missing values report
+```{r}
+missing_report <- data.frame(
+  Variable = names(na_count),
+  Missing_Count = na_count,
+  Missing_Percentage = round(na_percent, 2)
+)
+missing_report
+
+missing_report[missing_report$Missing_Count > 0, ]
+```
+
+
+#3.1.4.c)visulalize missing values report bar plot
+```{r}
+barplot(na_count,
+        main = "Missing Values per Variable",
+        las = 2,
+        col = "red")
+```
+
+
+#3.1.5. Visualize the distribution of the target variable Churn using a bar plot.
+```{r}
+ggplot(business_data, aes(x = factor(Churn))) +
+geom_bar(fill = "steelblue") +
+labs(title = "Customer Churn Distribution", x = "Churned", y
+= "Count",
+)
+```
+
+#3.1.6. Calculate and report the class imbalance ratio.
+```{r}
+prop.table(table(business_data$Churn))
+
+prop.table(table(business_data$Churn)) * 100
+
+
+class_counts <- table(business_data$Churn)
+imbalance_ratio <- class_counts[1] / class_counts[2]  # 0/1 or No/Yes
+imbalance_ratio
+
+imbalance_table <- data.frame(
+  Class = names(class_counts),
+  Count = as.numeric(class_counts),
+  Percentage = round(prop.table(class_counts) * 100, 2)
+)
+
+imbalance_table
+
+
+ggplot(business_data, aes(x = Churn)) +
+  geom_bar(fill = c("steelblue", "orange")) +
+  geom_text(stat = "count",
+            aes(label = paste0(..count.., "\n(",
+                               round(..count../sum(..count..)*100, 1), "%)")),
+            vjust = -0.5) +
+  labs(
+    title = "Customer Churn Distribution",
+    x = "Churn Status",
+    y = "Count"
+  ) +
+  ylim(0, max(table(business_data$Churn)) * 1.2)
+```
+
+
+
+3.2 Task 2: Data Preprocessing (15 Marks)
+
+#3.2.1. Handle missing values (justify your method: removal or imputation).
+A comprehensive check for missing values revealed that all variables had complete observations (0% missing). As a result, no data cleaning procedures such as imputation or row removal were necessary. This ensures that all available data (n = 2560) was retained for model training, maximizing statistical power and model reliability.
+```{r}
+data_clean <- na.omit(business_data)
+```
+
+
+#3.2.1.a) check categorical variables
+```{r}
+categorical_vars <- names(data_clean)[sapply(data_clean, is.factor)]
+categorical_vars
+```
+
+#3.2.2. Convert categorical variables to factors:
+```{r}
+categorical_vars <- c(
+  "Gender","ContractType","PaymentMethod","InternetService",
+  "OnlineSecurity","TechSupport","StreamingTV",
+  "StreamingMovies","LoyaltyProgram"
+)
+
+data_clean[categorical_vars] <- lapply(
+  data_clean[categorical_vars],
+  factor
+)
+```
+
+
+
+#3.2.3. Convert the target variable Churn to a factor with levels "No" (0) and "Yes" (1).
+```{r}
+data_clean$Churn <- factor(data_clean$Churn,
+                           levels = c(0,1),
+                           labels = c("No","Yes"))
+```
+
+
+#3.2.3.a) verify change to factor
+```{r}
+str(data_clean)
+```
+#check numerical variables in data_clean
+```{r}
+numeric_vars <- names(data_clean)[sapply(data_clean, is.numeric)]
+numeric_vars
+```
+
+
+#3.2.4.a) For KNN and SVM:Scale numeric predictors(mean=0, sd=1)using preProcess()from caret.
+```{r}
+numeric_vars <- c(
+  "Age",
+  "TenureMonths",
+  "MonthlyCharges",
+  "TotalCharges",
+  "NumSupportTickets",
+  "SatisfactionScore"
+)
+
+preproc <- preProcess(
+  data_clean[, numeric_vars],
+  method = c("center", "scale")
+)
+data_scaled <- data_clean
+
+data_scaled[, numeric_vars] <- predict(
+  preproc,
+  data_clean[, numeric_vars]
+)
+```
+
+
+#3.2.4.b)verify scaling
+```{r}
+# Before scaling
+sapply(data_clean[, numeric_vars], mean)
+sapply(data_clean[, numeric_vars], sd)
+
+# After scaling
+sapply(data_scaled[, numeric_vars], mean)
+sapply(data_scaled[, numeric_vars], sd)
+```
+
+#3.2.5. For Random Forest: Scaling is not required (tree-based).
+
+
+
+#3.2.6. Document your preprocessing decisions in the report.
+After applying centering and scaling, all numeric variables were standardized. The means are approximately zero (due to floating-point precision), and the standard deviations are exactly 1. This confirms that the scaling procedure was successful, ensuring all variables are on a comparable scale for distance-based models such as KNN and SVM.
+
+```{r}
+str(data_clean)
+```
+
+
+
+3.3 Task 3: Data Partitioning (10 Marks)
+
+#3.3.1. Set the seed to 2026 for reproducibility.
+```{r}
+set.seed(2026)
+```
+
+
+#3.3.2. Split the data into 70% training and 30% testing using stratified sampling (to preserve class balance).
+```{r}
+# Stratified split data_clean
+train_index <- createDataPartition(data_clean$Churn, p = 0.7, list = FALSE)
+train_data <- data_clean[train_index, ]
+test_data  <- data_clean[-train_index, ]
+
+train_index <- createDataPartition(data_scaled$Churn, p = 0.7, list = FALSE)
+train_scaled <- data_scaled[train_index, ]
+test_data  <- data_scaled[-train_index, ]
+```
+
+
+#3.3.3. Report the class distribution (counts and percentages) in both training and testing sets.
+```{r}
+cat("Training Set:\n")
+print(table(train_data$Churn))
+prop.table(table(train_data$Churn))
+
+cat("\nTesting Set:\n")
+print(table(test_data$Churn))
+prop.table(table(test_data$Churn))
+```
+
+
+#3.3.4. Verify that the class proportions are similar in both sets.
+```{r}
+train_prop <- prop.table(table(train_data$Churn))
+test_prop  <- prop.table(table(test_data$Churn))
+
+prop_df <- data.frame(
+  Class = rep(names(train_prop), 2),
+  Proportion = c(as.numeric(train_prop), as.numeric(test_prop)),
+  Dataset = rep(c("Train", "Test"), each = length(train_prop))
+)
+
+ggplot(prop_df, aes(x = Class, y = Proportion, fill = Dataset)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Class Proportions: Train vs Test Set",
+       x = "Class",
+       y = "Proportion") +
+  theme_minimal()
+```
+the bars for Train and Test are almost equal height showing good stratified split
+
+
+
+
+3.4 Task 4: TrainControl Scheme (10 Marks)
+
+#3.4.1. Define a trainControl scheme with the following specifications:
+```{r}
+ctrl <- trainControl(
+  method = "cv",                     #cross-validation
+  number = 10,                       #10 fold
+  savePredictions = "final",         # Save predictions
+  classProbs = TRUE,                 # Enable probability predictions
+  summaryFunction = twoClassSummary, # ROC, Sens, Spec
+  verboseIter = FALSE                # Suppress iteration output
+)
+```
+
+
+
+#3.4.2. Explain why cross-validation is important for model evaluation.
+Cross-validation is used to evaluate model performance more reliably by repeatedly training and testing the model on different subsets of the data. This reduces bias from a single train-test split, improves generalization assessment, and helps detect over fitting. In 10-fold cross-validation, the dataset is divided into 10 parts, and the model is trained and tested 10 times, with each part serving as the test set once.
+
+#3.4.3. Save this control object to use across all models.
+
+
+
+
+3.5 Task 5: Model Training- Logistic Regression (15 Marks)
+
+#3.5.1.a) Train a Logistic Regression model using caret::train() with method "glm".
+```{r}
+log_model <- train(
+  Churn ~ Age + Gender + TenureMonths + MonthlyCharges +
+    ContractType + PaymentMethod + InternetService +
+    SatisfactionScore + LoyaltyProgram,
+  data = train_data,
+  method = "glm",
+  family = binomial,
+  trControl = ctrl
+)
+```
+
+#3.5.1.b) Extract and report the model coefficients.
+```{r}
+coef_table <- summary(log_model$finalModel)$coefficients
+coef_table
+```
+
+#3.5.1.c)Calculate Odds Ratios (OR) for at least 3 significant predictors: OR = eβ
+```{r}
+odds_ratios <- exp(coef(log_model$finalModel))
+odds_ratios
+```
+
+#3.5.1.d)5. Interpret the Odds Ratios in the context of churn risk.
+```{r}
+# Extract coefficients and compute Odds Ratios
+odds_ratios <- exp(coef(log_model$finalModel))
+
+plot_df <- data.frame(
+  Variable = names(odds_ratios),
+  OddsRatio = as.numeric(odds_ratios)
+)
+
+# Remove intercept (not useful for interpretation)
+plot_df <- plot_df[plot_df$Variable != "(Intercept)", ]
+
+# Order for better visualization
+plot_df <- plot_df[order(plot_df$OddsRatio), ]
+
+
+ggplot(plot_df, aes(x = reorder(Variable, OddsRatio), y = OddsRatio)) +
+  geom_point(size = 3, color = "blue") +
+  geom_segment(aes(xend = Variable, y = 1, yend = OddsRatio), color = "gray") +
+  coord_flip() +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  labs(
+    title = "Odds Ratios for Customer Churn",
+    x = "Predictors",
+    y = "Odds Ratio (OR)"
+  )
+```
+
+
+
+#3.5.2. Alternatively, fit a baseline model using base R glm() function.
+```{r}
+glm_baseline <- glm(
+  Churn ~ Age + Gender + TenureMonths + MonthlyCharges +
+    ContractType + PaymentMethod + InternetService +
+    SatisfactionScore + LoyaltyProgram,
+  data = train_data,
+  family = binomial
+)
+```
+
+#3.5.3.a) Extract and report the model coefficients.
+```{r}
+summary(glm_baseline)$coefficients
+```
+
+
+
+The odds ratio analysis indicates that contract type and tenure are the strongest predictors of customer churn. Customers on longer-term contracts (one-year and two-year) show significantly lower churn risk, with odds ratios of 0.52 and 0.15 respectively. In contrast, higher monthly charges and electronic check payment methods increase churn probability. These findings suggest that pricing strategy and contract structure are key drivers of customer retention.
+
+
+
+#log model results
+```{r}
+log_model$results
+```
+
+
+3.6 Task 6: Model Training- KNN (15 Marks
+
+#3.6.1. Train a K-Nearest Neighbors model using caret::train() with method "knn".
+#3.6.2. Tune the parameter k (number of neighbors) using the grid: k = 1, 3, 5,
+```{r}
+ knn_model <- train(
+   Churn ~ Age + Gender + TenureMonths + MonthlyCharges +
+  ContractType + PaymentMethod + InternetService +
+    SatisfactionScore + LoyaltyProgram,
+data = train_scaled, 
+method = "knn",
+trControl = ctrl,
+metric = "ROC",
+tuneGrid = expand.grid(k = seq(1, 21, by = 2))
+    
+ )
+```
+
+
+#View tuning results
+```{r}
+knn_model
+```
+
+
+#3.6.3. Important: Use the scaled dataset for KNN (distance-based algorithm).
+
+
+#3.6.4. Report the optimal k value selected by cross-validation.
+```{r}
+knn_model$bestTune
+```
+
+
+#3.6.5. Plot accuracy vs. k to visualize the tuning results.
+```{r}
+plot(knn_model, main = "KNN: Accuracy vs k")
+```
+
+
+#results
+```{r}
+knn_model$results
+```
+
+
+
+
+3.7 Task 7: Model Training- SVM (15 Marks)
+
+#3.7.1. Train a Support Vector Machine model using caret::train() with method "svmRadial".
+```{r}
+svm_model<-train(
+  Churn ~ Age + Gender + TenureMonths + MonthlyCharges +
+    ContractType + PaymentMethod + InternetService +
+    SatisfactionScore + LoyaltyProgram,
+  data = train_scaled,
+  method = "svmRadial",
+  trControl = ctrl,
+  metric = "ROC",
+  tuneGrid = expand.grid(
+   C = c(0.25, 0.5, 1, 2, 4),
+sigma = c(0.01, 0.05, 0.1, 0.5)
+))
+```
+
+#3.7.2. Tune the hyperparameters:
+C (cost): 0.25, 0.5, 1, 2, 4, sigma: 0.01, 0.05, 0.1, 0.5
+#3.7.3. Important: Use the scaled dataset for SVM
+#3.7.4. Report the optimal C and sigma values.
+```{r}
+# View optimal parameters
+svm_model$bestTune
+```
+
+
+
+# Plot tuning results
+```{r}
+plot(svm_model, main = "SVM: ROC vs Parameters")
+```
+
+#3.7.5. Explain the role of the kernel function in SVM.
+A kernel function is a mathematical tool that allows SVM to learn non-linear decision boundaries without explicitly transforming the data into higher dimensions.
+
+#results 
+```{r}
+svm_model$results
+```
+
+
+3.8 Task 8: Model Training- Random Forest (15 Marks)
+
+#3.8.1. Train a Random Forest model using caret::train() with method "rf".
+```{r}
+rf_model <- train(
+  Churn ~ Age + Gender + TenureMonths + MonthlyCharges +
+    ContractType + PaymentMethod + InternetService +
+    SatisfactionScore + LoyaltyProgram,
+  data = train_data,
+  method = "rf",
+trControl = ctrl,
+metric = "ROC",
+tuneGrid = expand.grid(mtry = c(2, 4, 6, 8)),
+ntree = 500
+)
+```
+```{r}
+plot(rf_model)
+```
+
+#3.8.2. Tune the parameter mtry (features per split): 2, 4, 6, 8.
+#3.8.3. Set ntree = 500 (number of trees).
+```{r}
+rf_model$finalModel
+```
+
+#3.8.4. Report the optimal mtry value.
+```{r}
+rf_model$bestTune
+```
+
+#3.8.5. Extract and plot variable importance.
+```{r}
+varImp(rf_model)
+```
+
+
+#3.8.6. Identify the top 5 most important predictors for churn.
+```{r}
+plot(varImp(rf_model), main = "Random Forest: Variable
+Importance")
+```
+
+#results
+```{r}
+rf_model$results
+```
+
+
+# Check dimensions of your test sets
+```{r}
+cat("Original test data:", nrow(test_data), "rows\n")
+cat("Scaled test data:", nrow(test_scaled), "rows\n")
+
+# Verify Churn is a factor
+class(test_data$Churn)
+levels(test_data$Churn)
+```
+
+
+
+
+3.9 Task 9: Model Evaluation and Comparison (20 Marks)
+
+
+#3.9.1. Predict the class and probabilities on the test set for all 4 models.
+```{r}
+# Predictions for all models
+log_pred <- predict(log_model, test_data)
+log_probs <- predict(log_model, test_data, type = "prob")
+
+knn_pred <- predict(knn_model, test_scaled)
+knn_probs <- predict(knn_model, test_scaled, type = "prob")
+
+svm_pred <- predict(svm_model, test_scaled)
+svm_probs <- predict(svm_model, test_scaled, type = "prob")
+
+rf_pred <- predict(rf_model, test_data)
+rf_probs <- predict(rf_model, test_data, type = "prob")
+```
+
+
+#3.9.1b extract metrics
+```{r}
+extract_metrics <- function(cm) {
+  data.frame(
+    Accuracy    = round(cm$overall["Accuracy"], 4),
+    Sensitivity = round(cm$byClass["Sensitivity"], 4),
+    Specificity = round(cm$byClass["Specificity"], 4),
+    Precision   = round(cm$byClass[["Pos Pred Value"]], 4),
+    F1_Score    = round(cm$byClass["F1"], 4),
+    Kappa       = round(cm$overall["Kappa"], 4)
+  )
+}
+
+metrics_table <- rbind(
+  c("Logistic Regression", extract_metrics(confusionMatrix(log_pred, test_data$Churn, positive="Yes"))),
+  c("KNN", extract_metrics(confusionMatrix(knn_pred, test_scaled$Churn, positive="Yes"))),
+  c("SVM", extract_metrics(confusionMatrix(svm_pred, test_scaled$Churn, positive="Yes"))),
+  c("Random Forest", extract_metrics(confusionMatrix(rf_pred, test_data$Churn, positive="Yes")))
+)
+colnames(metrics_table)[1] <- "Model"
+metrics_table <- as.data.frame(metrics_table)
+print(metrics_table)
+```
+
+#3.9.2. For each model, generate a Confusion Matrix and report:
+• Accuracy• Sensitivity (Recall)• Specificity• Precision (PPV)• F1-Score• Kappa
+```{r}
+# Confusion Matrix for Logistic regression
+confusionMatrix(log_pred, test_data$Churn, positive = "Yes")
+
+confusionMatrix(knn_pred, test_scaled$Churn, positive = "Yes")
+
+confusionMatrix(svm_pred, test_scaled$Churn, positive = "Yes")
+
+confusionMatrix(rf_pred, test_data$Churn, positive = "Yes")
+
+```
+
+
+
+
+#3.9.3. Plot ROC curves for all 4 models on the same graph.
+```{r}
+# ROC Curves
+log_roc <- roc(test_data$Churn, log_probs$Yes)
+knn_roc <- roc(test_data$Churn, knn_probs$Yes)
+svm_roc <- roc(test_data$Churn, svm_probs$Yes)
+rf_roc <- roc(test_data$Churn, rf_probs$Yes)
+        
+
+```
+
+
+#3.9.4. Calculate and compare AUC values for all models.
+```{r}
+ plot(log_roc, col = "blue", lwd = 2, main = "ROC Comparison")
+lines(knn_roc, col = "green", lwd = 2)
+lines(svm_roc, col = "red", lwd = 2)
+lines(rf_roc, col = "purple", lwd = 2)
+ legend("bottomright",
+        legend = c("Logistic", "KNN", "SVM", "RF"),
+col = c("blue", "green", "red", "purple"),
+lwd = 2)
+```
+
+
+
+
+
+#3.9.5. Create a comparison table summarizing all metrics.
+```{r}
+auc_values <- data.frame(
+  Model = c("Logistic", "KNN", "SVM", "Random Forest"),
+  AUC = c(
+    as.numeric(auc(log_roc)),
+    as.numeric(auc(knn_roc)),
+    as.numeric(auc(svm_roc)),
+    as.numeric(auc(rf_roc))
+  )
+)
+
+print(auc_values)
+```
+
+
+#3.9.6. Rank the models from best to worst based on AUC.
+```{r}
+model_results <- auc_values[order(-auc_values$AUC), ]
+model_results
+```
+
+#visulslization
+```{r}
+ggplot(model_results, aes(x = reorder(Model, AUC), y = AUC)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Model Ranking Based on AUC",
+    x = "Model",
+    y = "AUC"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+# ============================================
+# TOP 5 PREDICTORS ONLY - ODDS RATIO PLOT
+# ============================================
+
+# Calculate absolute impact (distance from 1)
+odds_df$Impact <- abs(odds_df$OddsRatio - 1)
+
+# Sort by impact and take top 5
+top5_odds <- odds_df[order(-odds_df$Impact), ]
+top5_odds <- head(top5_odds, 5)
+
+# Sort for plotting (by OddsRatio value)
+top5_odds <- top5_odds[order(top5_odds$OddsRatio), ]
+
+# Create plot
+ggplot(top5_odds, aes(x = reorder(Variable, OddsRatio), y = OddsRatio)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", size = 1) +
+  geom_text(aes(label = round(OddsRatio, 2)), 
+            hjust = ifelse(top5_odds$OddsRatio > 1, -0.2, 1.2), 
+            size = 4) +
+  labs(
+    title = "Top 5 Predictors of Customer Churn",
+    subtitle = "Logistic Regression Model - Odds Ratios",
+    x = "Predictor",
+    y = "Odds Ratio"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 11),
+    axis.text.y = element_text(size = 11)
+  )
+```
+
+
+
+3.10 Task 10: Interpretation and Recommendations (15 Marks)
+#3.10.1. Based on your results, answer the following:
+#3.10.1.a)Which model performed best? Justify using metrics.
+logistic regression 
+The Logistic Regression model performed best, achieving the highest AUC of 0.8711.
+AUC measures the model’s ability to distinguish between churn and non-churn customers, and a higher value indicates better classification performance. Since Logistic Regression has the highest AUC among all models, it demonstrates the strongest predictive capability.
+
+#3.10.1.b)Which model performed worst? Explain possible reasons.
+random forest
+The Random Forest model performed worst with an AUC of 0.8460.It may not have been properly tuned (e.g., number of trees, mtry)
+The dataset may not have strong nonlinear relationships, limiting Random Forest’s advantage
+Potential overfitting or underfitting
+Feature set may favor simpler linear relationships, benefiting Logistic Regression more
+
+
+#3.10.1.c)Was feature scaling necessary for all models? Explain.
+No, feature scaling was not necessary for all models.
+
+Required for:KNN, SVM
+These models rely on distance calculations, so scaling ensures all variables contribute equally.
+Not required for:
+Logistic Regression
+Random Forest
+These models are not distance-based and are generally unaffected by differences in feature scale.
+
+#3.10.1.d)Did cross-validation improve model reliability? Explain.
+Yes, cross-validation improved model reliability.
+
+It reduces the risk of overfitting
+Provides a more robust estimate of model performance
+Ensures results are not dependent on a single train-test split
+Improves generalizability to unseen data
+
+#3.10.2. For the best model, identify the top 3 risk factors for churn.
+Based on Logistic Regression (interpretable model), the top risk factors are typically identified using coefficients:
+
+TenureMonths (negative effect) → Shorter tenure increases churn risk
+MonthlyCharges (positive effect) → Higher charges increase likelihood of churn
+SatisfactionScore (negative effect) → Lower satisfaction strongly increases churn
+
+
+#3.10.3. Discuss the trade-offs between model accuracy and interpretability.
+There is a clear trade-off:
+
+Logistic Regression
+High interpretability, easy to explain coefficients, good performance (best AUC),may miss complex relationships
+Random Forest / SVM:can capture complex patterns,hard to interpret (“black-box” models)
+
+Logistic Regression provides both strong performance and interpretability, making it the most practical choice.
+
+#3.10.4. Provide recommendations for customer retention strategies based on your findings.
+Based on findings:
+
+marketing strategies to Target high-risk customers:
+ *New customers (low tenure)
+ *Customers with high monthly charges
+ *Customers with low satisfaction scores
+ 
+Suggested strategies:
+*Offer loyalty incentives for new customers
+*Provide discounts or flexible pricing plans
+*Improve customer service and support experience
+*Use early warning systems to identify likely churners
+*Personalize engagement (emails, offers, follow-ups
+
+#3.10.5. Discuss any limitations of your analysis (e.g., observational data, potential confounders).
+Observational data:
+Cannot establish causality, only associations
+Potential confounders:
+Important variables may be missing (e.g., competitor offers, income level)
+Model assumptions:
+Logistic Regression assumes linear relationships
+Data quality issues:
+Possible measurement errors or bias
+Generalizability:
+Results may not apply to other datasets or industries
+
+Logistic Regression emerged as the best-performing model with the highest AUC while maintaining strong interpretability. This makes it highly suitable for both prediction and decision-making. The analysis highlights key churn drivers such as tenure, cost, and satisfaction, providing actionable insights for improving customer retention. 
+
+

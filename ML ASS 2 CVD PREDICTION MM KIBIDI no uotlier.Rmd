@@ -1,0 +1,951 @@
+---
+title: "ML ASS 2 CVD PREDICTION MODEL2"
+author: "KIBIDI"
+date: "2026-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Course: PROFFESIONAL CERTIFICATE IN DATA ANALYSIS,  MACHINE LEARNING AND AI
+Instructor: Lumumba W. Victor
+Email: lumumbavictor172@gmail.com
+
+student: KIBIDI LERENCER
+Reg no: CDAM/0047/2026
+Email: kabeyi24leren@gmail.com
+
+Date Issued: April , 2026
+
+```{r}
+setwd("C:/Users/h6p/Desktop/ASSIGNMENTS")
+```
+
+
+
+3 Tasks
+3.1 Task 1: Data Import and Exploration (10 Marks)
+
+#3.1.1. Load all necessary libraries 
+```{r}
+library(tidyverse)# Data manipulation
+library(caret)# Unified ML interface
+library(pROC)# ROC analysis
+library(e1071)# SVM
+library(class)# KNN
+library(randomForest) # Random Forest
+library(dplyr)
+library(vip)
+```
+
+
+
+#3.1.2. Import the dataset medical_data.csv.
+```{r}
+hypertension <- read_csv("medical_data.csv")
+head(hypertension)
+```
+
+#3.1.3a) Display the structure of the data (str()) 
+```{r}
+(str(hypertension)) 
+```
+
+
+
+#3.1.3b) Display summary statistics (summary()).
+```{r}
+(summary(hypertension))
+```
+
+
+
+
+#3.1.4a) Check for missing values  per variable.
+```{r}
+colSums(is.na(hypertension))
+```
+
+
+#3.1.4b) report the count and percentage per variable.
+```{r}
+missing_summary <- data.frame(
+  Variable = names(hypertension),
+  Missing_Count = colSums(is.na(hypertension)),
+  Missing_Percent = colMeans(is.na(hypertension)) * 100
+)
+
+missing_summary
+```
+
+
+#3.1.5. Visualize the distribution of the target variable CVD using a bar plot.
+```{r}
+ ggplot(hypertension, aes(x = factor(CVD))) +
+geom_bar(fill = "steelblue") +
+labs(title = "CVD Distribution", x = "CVD", y = "Count")
+```
+
+
+
+#3.1.6a) Calculate and report the class imbalance ratio
+```{r}
+class_counts <- table(hypertension$CVD)
+
+IR <- max(class_counts) / min(class_counts)
+
+IR
+
+#percentage
+prop.table(class_counts) * 100
+```
+
+
+#3.1.6b)visualize class imbalance ratio in percentage
+```{r}
+hypertension %>%
+  count(CVD) %>%
+  mutate(Percent = n / sum(n) * 100) %>%
+  ggplot(aes(x = CVD, y = n, fill = CVD)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(Percent,1), "%")),
+            vjust = -0.5) +
+  labs(title = "CVD Class Distribution with Percentages",
+       x = "CVD",
+       y = "Count") +
+  theme_minimal()
+```
+
+
+
+#3.1.3c)Frequency of variables m
+```{r}
+table(hypertension$gender)
+table(hypertension$smoking)
+table(hypertension$alcohol)
+table(hypertension$family_history)
+table(hypertension$medication_adherence)
+table(hypertension$urban_residence)
+table(hypertension$CVD)
+```
+
+
+
+
+
+3.2 Task 2: Data Preprocessing (15 Marks)
+#3.2.1. Handle missing values (justify your method: removal or imputation).
+```{r}
+hypertension_clean <- na.omit(hypertension)
+```
+
+Missing values were handled using removal because the dataset contained no significant missing data,this is to  ensure data completeness without introducing bias from imputation.
+
+
+
+#3.2.2. Convert categorical variables to factors:
+```{r}
+categorical_vars <- c("gender", "smoking", "alcohol",
+                      "family_history", "medication_adherence", "urban_residence")
+
+hypertension_clean[categorical_vars] <- lapply(hypertension_clean[categorical_vars], as.factor)
+```
+
+
+#3.2.3a) Convert the target variable CVD to a factor with levels "No" (0) and "Yes" (1).
+```{r}
+hypertension_clean$CVD <- factor(hypertension_clean$CVD,
+                                 levels = c("No", "Yes"))
+```
+
+#3.2.5b.outlier visualization
+```{r}
+boxplot(hypertension_clean$age, main="Outliers_age")
+boxplot(hypertension_clean$gender, main="Outliers_gender")
+boxplot(hypertension_clean$bmi, main="Outliers_bmi")
+boxplot(hypertension_clean$blood_pressure, main="Outliers_blood_pressure")
+boxplot(hypertension_clean$cholesterol, main="Outliers_cholesterol")
+boxplot(hypertension_clean$glucose, main="Outliers_glucose")
+boxplot(hypertension_clean$smoking, main="Outliers_smoking")
+boxplot(hypertension_clean$alcohol, main="Outliers_alcohol")
+boxplot(hypertension_clean$physical_activity, main="Outliers_physical_activity")
+boxplot(hypertension_clean$family_history, main="Outliers_family_history")
+boxplot(hypertension_clean$stress_level, main="Outliers_stress_level")
+boxplot(hypertension_clean$heart_rate, main="Outliers_heart_rate")
+boxplot(hypertension_clean$sleep_hours, main="Outliers_sleep_hours")
+boxplot(hypertension_clean$medication_adherence, main="Outliers_medication_adherence")
+boxplot(hypertension_clean$urban_residence, main="Outliers_urban_residence")
+```
+
+
+# Function to remove outliers using IQR from a single column
+```{r}
+remove_outliers_iqr <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  return(x >= lower_bound & x <= upper_bound)  # Returns TRUE for non-outliers
+}
+
+# Apply to all numeric columns in your dataset
+numeric_cols <- names(hypertension_clean)[sapply(hypertension_clean, is.numeric)]
+
+# Create logical vector for rows to KEEP (no outliers in ANY column)
+keep_rows <- rep(TRUE, nrow(hypertension_clean))
+
+for(col in numeric_cols) {
+  keep_rows <- keep_rows & remove_outliers_iqr(hypertension_clean[[col]])
+}
+
+# Remove rows with outliers
+hypertension_cleant <- hypertension_clean[keep_rows, ]
+
+cat("Original rows:", nrow(hypertension_clean))
+cat("Rows after outlier removal:", nrow(hypertension_cleant))
+cat("Rows removed:", nrow(hypertension_clean) - nrow(hypertension_cleant))
+```
+
+N/B : hypertension_cleant DOES NOT HAVE OUTLIERS
+
+#3.2.3b)verify factors conversion
+```{r}
+str(hypertension_cleant)
+```
+
+#3.2.4. For KNN and SVM:Scale numeric predictors(mean=0, sd=1)using preProcess()from caret.
+#3.2.4a) site numerical variables
+```{r}
+numeric_vars <- names(hypertension_cleant)[sapply(hypertension_cleant, is.numeric)]
+
+numeric_vars
+```
+#3.2.4b)Scale numeric predictors
+```{r}
+ numeric_vars <- c("age", "bmi", "blood_pressure", "cholesterol",
+                  "glucose", "stress_level", "heart_rate", "sleep_hours")
+
+preproc <- preProcess(hypertension_cleant[, numeric_vars],
+                      method = c("center", "scale"))
+
+hypertension_scaled <- hypertension_cleant
+
+hypertension_scaled[, numeric_vars] <- predict(preproc,
+                                               hypertension_cleant[, numeric_vars])
+```
+
+
+
+#3.2.4c)verify scaling using numerical variable 'age'
+```{r}
+cat("\n========== SCALING VERIFICATION ==========\n")
+cat("Original age - Mean:", mean(hypertension_cleant$age), "| SD:", sd(hypertension_clean$age), "\n")
+cat("Scaled age - Mean:", round(mean(hypertension_scaled$age), 2), "| SD:", round(sd(hypertension_scaled$age), 2), "\n")
+```
+
+#3.2.5a. For Random Forest: Scaling is not required (tree-based).
+Scaling is not required for Random Forest because it is a tree-based algorithm that splits data using thresholds rather than distance or magnitude. Therefore, changes in scale do not affect model performance or splits.
+
+
+
+#3.2.6. Document your preprocessing decisions in the report.
+handling missing values'
+scalling
+conversion to factors
+removal of outliers
+
+
+
+3.3 Task 3: Data Partitioning (10 Marks)
+
+#3.3.1. Set the seed to 2026 for reproducibility.
+```{r}
+ set.seed(2026)
+```
+
+
+for the purpose of fare comparison i will partition scaled data and my train data will have no outliers and will also be scaled and i will use this acreoss all the 4 models
+
+
+#3.3.2. Split the data into 70% training and 30% testing using stratified sampling (to preserve class balance).
+```{r}
+ train_index <- createDataPartition(hypertension_scaled$CVD, p = 0.70,
+list = FALSE)
+train_data <- hypertension_cleant[train_index, ]
+test_data <- hypertension_cleant[-train_index, ]
+
+#train for svm and knn scaled
+train_scaled <- hypertension_scaled[train_index, ]
+test_scaled <- hypertension_scaled[-train_index, ]
+
+
+dim(train_data)
+dim(test_data)
+
+cat("\n========================\n")
+dim(train_scaled)
+dim(test_scaled)
+```
+
+
+
+#3.3.3. Report the class distribution (counts and percentages) in both training and testing sets.
+```{r}
+# Training Set
+cat("Training Set:\n")
+train_tab <- table(train_data$CVD)
+print(train_tab)
+cat("Percentages (%):\n")
+print(round(prop.table(train_tab) * 100, 0))  # Changed from 2 to 0
+
+
+cat("\n========================\n")
+
+# Testing Set
+cat("Testing Set:\n")
+test_tab <- table(test_data$CVD)
+print(test_tab)
+cat("Percentages (%):\n")
+print(round(prop.table(test_tab) * 100, 0))  # Changed from 2 to 0
+```
+
+3.4 Task 4: TrainControl Scheme (10 Marks)
+
+#3.4.1. Define a trainControl scheme with the following specifications:
+```{r}
+ctrl <- trainControl(
+method = "cv",              # 10-fold cross-validation
+number = 10,                # 10 folds
+savePredictions = "final",  # Save predictions
+classProbs = TRUE,          # Enable probability predictions
+verboseIter = FALSE,        # ROC, Sens, Spec
+
+summaryFunction = twoClassSummary, # Suppress iteration output
+)
+```
+
+
+#3.4.2. Explain why cross-validation is important for model evaluation.
+Reduces overfitting by evaluating model on multiple unseen folds
+Provides more stable and reliable performance estimates than a single train-test split
+Allows hyperparameter tuning without leaking test data
+Maximizes use of limited training data
+
+
+#3.4.3. Save this control object to use across all models.
+For fair comparison
+
+
+3.5 Task 5: Model Training- Logistic Regression (15 Marks)
+
+#3.5.1. Train a Logistic Regression model using caret::train() with method "glm".
+```{r}
+log_model <- train(
+  
+CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + physical_activity + 
+      family_history + stress_level + sleep_hours,
+
+data = train_data,
+method = "glm",
+family = binomial,
+trControl = ctrl
+)
+```
+
+
+
+#3.5.3. Extract and report the model coefficients.
+```{r}
+summary(log_model$finalModel)$coefficients
+```
+
+
+#3.5.4a) Calculate Odds Ratios (OR) for at least 3 significant predictors: OR = eβ
+```{r}
+# Calculate coefficients and odds ratios
+coefficients <- coef(log_model$finalModel)
+odds_ratios <- exp(coefficients)
+
+# Create dataframe and sort
+odds_df <- data.frame(
+  Variable = names(odds_ratios),
+  Odds_Ratio = round(odds_ratios, 3)
+)
+
+# Sort by Odds Ratio descending (largest to smallest)
+odds_df <- odds_df[order(-odds_df$Odds_Ratio), ]
+
+print(odds_df)
+```
+
+
+#3.5.4b)odds table
+```{r}
+odds_table <- data.frame(
+  Variable = names(odds_ratios),
+  Coefficient = round(coefficients, 4),
+  Odds_Ratio = round(odds_ratios, 3)
+)
+
+odds_table <- odds_table[order(-abs(odds_table$Coefficient)), ]
+
+odds_table
+```
+
+
+#3.5.4b)Bar plot of Odds Ratios
+```{r}
+# Remove intercept for better visualization
+odds_table <- odds_table[odds_table$Variable != "(Intercept)", ]
+
+# Sort by Coefficient absolute value
+odds_table <- odds_table[order(-abs(odds_table$Coefficient)), ]
+
+
+ggplot(odds_table, aes(x = reorder(Variable, Odds_Ratio), y = Odds_Ratio, 
+                       fill = Odds_Ratio > 1)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1)+
+  labs(title = "Odds Ratios for CVD Predictors",
+       subtitle = "Values > 1 indicate risk factors, < 1 indicate protective factors",
+       x = "Predictor Variable",
+       y = "Odds Ratio") +
+  scale_fill_manual(values = c("TRUE" = "coral", "FALSE" = "steelblue"),
+                    labels = c("Risk Factor", "Protective Factor")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.text.y = element_text(size = 10)) +
+  geom_text(aes(label = round(Odds_Ratio, 2)), hjust = -0.2, size = 3)
+```
+
+#3.5.5. Interpret the Odds Ratios in the context of CVD risk.
+SLIDE
+
+
+#3.5.2a) Alternatively, fit a baseline model using base R glm() function.
+```{r}
+log_modelb <- glm(
+  CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + physical_activity + 
+      family_history + stress_level + sleep_hours,
+  
+  data = train_data,
+  family = binomial
+)
+
+summary(log_modelb)
+```
+
+#3.5.2b) Calculate Odds Ratios (OR) for at least 3 significant predictors: OR = eβ
+```{r}
+# Extract coefficients
+coef_vals <- coef(log_modelb)
+
+# Convert to odds ratios
+odds_ratios <- exp(coef_vals)
+
+# Get p-values from model summary
+p_values <- summary(log_modelb)$coefficients[, 4]
+
+# Create clean table
+odds_table <- data.frame(
+  Variable = names(coef_vals),
+  Coefficient = round(coef_vals, 4),
+  Odds_Ratio = round(odds_ratios, 3),
+  P_value = round(p_values, 4)
+)
+
+# Remove row names
+rownames(odds_table) <- NULL
+
+# Sort by importance 
+odds_table <- odds_table[order(-abs(odds_table$Coefficient)), ]
+
+odds_table
+```
+
+
+
+3.6 Task 6: Model Training- KNN (15 Marks)
+
+#3.6.1. Train a K-Nearest Neighbors model using caret::train() with method "knn".
+#3.6.2a. Tune the parameter k (number of neighbors) using the grid: k = 1, 3, 5, ...,21.
+```{r}
+knn_grid <- data.frame(k = seq(1, 21, by = 2))
+
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+
+knn_model <- train(
+  CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + physical_activity + 
+      family_history + stress_level + sleep_hours,
+  
+  data = train_scaled,
+  method = "knn",
+  tuneGrid = knn_grid,
+  trControl = ctrl,
+  metric = "ROC"
+)
+
+knn_model$results
+```
+
+
+
+#3.6.2a.plot KNN model
+```{r}
+plot(knn_model)
+```
+
+
+#3.6.3. Important: Use the scaled dataset for KNN (distance-based algorithm).
+
+
+
+
+#3.6.4. Report the optimal k value selected by cross-validation.
+```{r}
+knn_model$bestTune
+```
+
+
+#3.6.5. Plot accuracy vs. k to visualize the tuning results.
+```{r}
+ggplot(knn_model$results, aes(x = k, y = ROC)) +
+  geom_line() +
+  geom_point(size = 2) +
+  labs(title = "KNN Model Tuning (ROC vs k)",
+       x = "Number of Neighbors (k)",
+       y = "ROC AUC") +
+  theme_minimal()
+```
+
+
+
+
+3.7 Task 7: Model Training- SVM (15 Marks)
+
+#3.7.1. Train a Support Vector Machine model using caret::train() with method "svmRadial".
+#3.7.2. Tune the hyperparameters:C (cost): 0.25, 0.5, 1, 2, 4, sigma: 0.01, 0.05, 0.1, 0.5
+#3.7.3. Important: Use the scaled dataset for SVM.
+```{r}
+svm_model <- train(
+  CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + physical_activity + 
+      family_history + stress_level + sleep_hours,
+
+data = train_scaled, # Use scaled data!
+method = "svmRadial",
+trControl = ctrl,
+tuneGrid = expand.grid(
+C = c(0.25, 0.5, 1, 2, 4),
+sigma = c(0.01, 0.05, 0.1, 0.5)
+))
+  
+svm_model$results
+```
+
+
+#3.7.4a. Report the optimal C and sigma values.
+```{r}
+ svm_model$bestTune
+```
+
+#3.7.5. Explain the role of the kernel function in SVM.
+A kernel function is a mathematical tool that allows SVM to learn non-linear decision boundaries without explicitly transforming the data into higher dimensions.
+
+
+
+#3.7.4b.Plot Heatmap of C vs Sigma for SVM
+```{r}
+# Extract SVM tuning results
+svm_results <- svm_model$results
+
+# Create heatmap
+ggplot(svm_results, aes(x = factor(C), y = factor(sigma), fill = ROC)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = round(ROC, 3)), size = 4, color = "black") +
+  scale_fill_gradient(low = "lightyellow", high = "darkred", 
+                      name = "ROC AUC",
+                      limits = c(min(svm_results$ROC), max(svm_results$ROC))) +
+  labs(title = "SVM Hyperparameter Tuning Heatmap",
+       subtitle = "ROC AUC by Cost (C) and Sigma (γ)",
+       x = "Cost Parameter (C)",
+       y = "Sigma (γ) - Kernel Width") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text = element_text(size = 11),
+        legend.position = "right")
+
+# Save the plot
+ggsave("svm_heatmap.png", width = 8, height = 6, dpi = 300)
+```
+
+
+
+
+3.8 Task 8: Model Training- Random Forest (15 Marks)
+
+#3.8.1. Train a Random Forest model using caret::train() with method "rf".
+#3.8.2. Tune the parameter mtry (features per split): 2, 4, 6, 8.
+#3.8.3. Set ntree = 500 (number of trees).
+```{r}
+ rf_model <- train(
+   CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + physical_activity + 
+      family_history + stress_level + sleep_hours,
+  
+  data = train_data, # Original data (not scaled)
+method = "rf",
+trControl = ctrl,
+tuneGrid = expand.grid(mtry = c(2, 4, 6, 8)),
+ntree = 500
+)
+rf_model$results 
+```
+
+
+#3.8.4. Report the optimal mtry value.
+```{r}
+rf_model$bestTune
+```
+
+
+#3.8.5. Extract and plot variable importance.
+```{r}
+varImp(rf_model)
+plot(varImp(rf_model), main = "Random Forest: Variable
+Importance")
+```
+
+
+#3.8.6a. Identify the top 5 most important predictors for CVD.
+```{r}
+rf_imp <- varImp(rf_model)
+
+rf_imp_df <- rf_imp$importance
+rf_imp_df$Variable <- rownames(rf_imp_df)
+```
+
+
+#3.8.6b.top 5 predictors
+```{r}
+top5 <- rf_imp_df[order(-rf_imp_df$Overall), ][1:5, ]
+top5
+```
+
+
+#3.8.6b.plot Top 5 Important Predictors for CVD
+```{r}
+ggplot(top5, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 5 Important Predictors for CVD",
+       x = "Predictor",
+       y = "Importance Score") +
+  theme_minimal()
+```
+
+
+3.9 Task 9: Model Evaluation and Comparison (20 Marks)
+
+#3.9.1. Predict the class and probabilities on the test set for all 4 models.
+```{r}
+log_pred <- predict(log_model, test_data)
+log_probs <- predict(log_model, test_data, type = "prob")
+
+knn_pred <- predict(knn_model, test_scaled)
+knn_probs <- predict(knn_model, test_scaled, type = "prob")
+
+svm_pred <- predict(svm_model, test_scaled)
+svm_probs <- predict(svm_model, test_scaled, type = "prob")
+
+rf_pred <- predict(rf_model, test_data)
+rf_probs <- predict(rf_model, test_data, type = "prob")
+ 
+```
+
+
+#3.9.2a. For each model, generate a Confusion Matrix and report:
+•Accuracy,•Sensitivity (Recall),•Specificity,•Precision (PPV),•F1-Score,•Kappa
+#3.9.2a: Confusion Matrix and report (logistic regression )
+```{r}
+confusionMatrix(log_pred, test_data$CVD, positive = "Yes")
+```
+
+#3.9.2b: Confusion Matrix and report (KNN )
+```{r}
+confusionMatrix(knn_pred, test_scaled$CVD, positive = "Yes")
+```
+
+
+#3.9.2C: Confusion Matrix and report (SVM )
+```{r}
+confusionMatrix(svm_pred, test_scaled$CVD, positive = "Yes")
+```
+
+
+#3.9.2d: Confusion Matrix and report (RF )
+```{r}
+confusionMatrix(rf_pred, test_data$CVD, positive = "Yes")
+```
+
+
+#3.9.3. Plot ROC curves for all 4 models on the same graph.
+#3.9.3a) get roc
+```{r}
+log_roc <- roc(test_data$CVD, log_probs$Yes)
+knn_roc <- roc(test_data$CVD, knn_probs$Yes)
+svm_roc <- roc(test_data$CVD, svm_probs$Yes)
+rf_roc <- roc(test_data$CVD, rf_probs$Yes)
+```
+
+
+#3.9.3b)Plot ROC curves for all 4 models on the same graph.
+```{r}
+plot(log_roc, col = "blue", lwd = 2, main = "ROC Comparison")
+ lines(knn_roc, col = "green", lwd = 2)
+  lines(svm_roc, col = "red", lwd = 2)
+  lines(rf_roc, col = "purple", lwd = 2)
+  legend("bottomright",
+         legend = c("Logistic", "KNN", "SVM", "RF"),
+col = c("blue", "green", "red", "purple"),
+lwd = 2)
+```
+
+
+
+#3.9.4. Calculate and compare AUC values for all models.
+```{r}
+auc_values <- data.frame(
+  Model = c("Logistic", "KNN", "SVM", "Random Forest"),
+AUC = c(as.numeric(auc(log_roc)),
+as.numeric(auc(knn_roc)),
+as.numeric(auc(svm_roc)),
+as.numeric(auc(rf_roc)))
+)
+print(auc_values)
+```
+
+
+#3.9.5a) Create a comparison table summarizing all metrics.
+```{r}
+model_performance <- data.frame(
+  Model = c("Logistic Regression", "KNN", "SVM", "Random Forest"),
+  auc_values
+)
+model_performance <- model_performance[order(-model_performance$AUC), ]
+model_performance
+```
+
+
+
+
+
+#3.9.6. Rank the models from best to worst based on AUC
+```{r}
+ggplot(model_performance, aes(x = reorder(Model, AUC), y = AUC)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Model Comparison Based on AUC",
+       x = "Model",
+       y = "AUC Score") +
+  theme_minimal()
+```
+
+
+#3.9.5B) Create a comparison table summarizing all metrics.
+```{r}
+# Plot all ROC curves
+plot(log_roc, col = "blue", lwd = 2, main = "ROC Comparison")
+lines(knn_roc, col = "green", lwd = 2)
+lines(svm_roc, col = "red", lwd = 2)
+lines(rf_roc, col = "purple", lwd = 2)
+legend("bottomright",
+       legend = c("Logistic", "KNN", "SVM", "RF"),
+       col = c("blue", "green", "red", "purple"),
+       lwd = 2)
+
+# AUC Comparison
+auc_values <- data.frame(
+  Model = c("Logistic", "KNN", "SVM", "Random Forest"),
+  AUC = c(as.numeric(auc(log_roc)),
+          as.numeric(auc(knn_roc)),
+          as.numeric(auc(svm_roc)),
+          as.numeric(auc(rf_roc)))
+)
+```
+
+#3.9.2. For each model, generate a Confusion Matrix and report:
+```{r}
+ 
+# ============================================
+# Function to extract all metrics from confusion matrix
+# ============================================
+extract_all_metrics <- function(cm, probs, actual, model_name) {
+  # Calculate AUC
+  roc_obj <- roc(actual, probs$Yes)
+  auc_value <- as.numeric(auc(roc_obj))
+  
+  # Extract metrics from confusion matrix
+  metrics <- data.frame(
+    Model = model_name,
+    Accuracy = round(cm$overall["Accuracy"], 4),
+    Sensitivity = round(cm$byClass["Sensitivity"], 4),
+    Specificity = round(cm$byClass["Specificity"], 4),
+    Precision = round(cm$byClass["Precision"], 4),
+    F1_Score = round(cm$byClass["F1"], 4),
+    Kappa = round(cm$overall["Kappa"], 4),
+    AUC = round(auc_value, 4)
+  )
+  
+  return(metrics)
+}
+
+# ============================================
+# Generate confusion matrices and extract metrics
+# ============================================
+
+# Logistic Regression
+cm_log <- confusionMatrix(log_pred, test_data$CVD, positive = "Yes")
+metrics_log <- extract_all_metrics(cm_log, log_probs, test_data$CVD, "Logistic Regression")
+
+# KNN
+cm_knn <- confusionMatrix(knn_pred, test_scaled$CVD, positive = "Yes")
+metrics_knn <- extract_all_metrics(cm_knn, knn_probs, test_scaled$CVD, "KNN")
+
+# SVM
+cm_svm <- confusionMatrix(svm_pred, test_scaled$CVD, positive = "Yes")
+metrics_svm <- extract_all_metrics(cm_svm, svm_probs, test_scaled$CVD, "SVM")
+
+# Random Forest
+cm_rf <- confusionMatrix(rf_pred, test_data$CVD, positive = "Yes")
+metrics_rf <- extract_all_metrics(cm_rf, rf_probs, test_data$CVD, "Random Forest")
+
+# ============================================
+# Combine all metrics into one table
+# ============================================
+comparison_table <- rbind(metrics_log, metrics_knn, metrics_svm, metrics_rf)
+
+# ============================================
+# Display the table
+# ============================================
+print(comparison_table)
+
+# ============================================
+# Save to CSV
+# ============================================
+write.csv(comparison_table, "model_comparison_metrics.csv", row.names = FALSE)
+
+# ============================================
+# Create a formatted table for presentation
+# ============================================
+library(knitr)
+kable(comparison_table, 
+      caption = "Model Performance Comparison - All Metrics",
+      col.names = c("Model", "Accuracy", "Sensitivity", "Specificity", 
+                    "Precision", "F1-Score", "Kappa", "AUC"),
+      digits = 4)
+```
+
+
+
+3.10 Task 10: Interpretation and Recommendations (15 Marks)
+
+#3.10.1. Based on your results, answer the following:
+#3.10.1a) Which model performed best? Justify using metrics.
+Logistic regression.
+Highest AUC (0.85)
+Highest sensitivity (28.99%)
+Highest kappa (0.351)
+Best balanced accuracy (63.47%)
+Interpretable odds ratios for clinical insights
+
+
+
+#3.10.1b)Which model performed worst? Explain possible reasons.
+Random forest
+2nd lowest AUC (0.790)
+sensitivity (0%)
+kappa (0.351)
+Best balanced accuracy (63.47%)
+Interpretable odds ratios for clinical insights
+
+#3.10.1c)Was feature scaling necessary for all models? Explain.
+feature scaling was nescessary for KNN,SVM Which are distance based model but not necessary for random forest a treebased model
+
+
+#3.10.1d)Did cross-validation improve model reliability? Explain.
+Yes cross validation avoided overfitting, and uniformity among all the models ensuarig reliabilty.
+
+
+#3.10.2. For the best model, identify the top 3 risk factors for CVD. 
+```{r}
+# Remove intercept
+odds_table <- odds_table[odds_table$Variable != "(Intercept)", ]
+
+# Sort by absolute coefficient (model importance)
+odds_table <- odds_table[order(-abs(odds_table$Coefficient)), ]
+
+# Take top 5
+top5_coef <- head(odds_table, 5)
+
+# Plot
+ggplot(top5_coef, aes(x = reorder(Variable, Odds_Ratio), y = Odds_Ratio, 
+                       fill = Odds_Ratio > 1)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  labs(title = "Top 5 Most Important CVD Predictors",
+       subtitle = "Based on Logistic Regression Coefficient Magnitude",
+       x = "Predictor Variable",
+       y = "Odds Ratio") +
+  scale_fill_manual(values = c("TRUE" = "coral", "FALSE" = "steelblue"),
+                    labels = c("Risk Factor", "Protective Factor")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.text.y = element_text(size = 11)) +
+  geom_text(aes(label = round(Odds_Ratio, 2)), hjust = -0.2, size = 4)
+```
+
+
+
+#3.10.3. Discuss the trade-offs between model accuracy and interpretability.
+Logistic regression: lower complexity, HIGH interpretability, GOOD accuracy
+• Random forest: higher accuracy, LOW interpretability (no direction)
+• SVM: moderate accuracy, VERY LOW interpretability (black box)
+
+
+
+#3.10.4. Provide recommendations for healthcare practitioners based on your findings.
+(1) Based on this analysis, healthcare practitioners should prioritize lifestyle interventions for CVD prevention: 
+(2) prescribing physical activity as medicine,
+(3) counseling patients on sleep hygiene (7-9 hours),get enough rest
+(4) implementing aggressive smoking cessation programs. 
+(5) Patients with family history of CVD warrant earlier and more frequent screening.
+
+
+#3.10.5. Discuss any limitations of your analysis (e.g., observational data, potential confounders).
+Observational data,Class imbalance ,Data limitations,Model limitations,Clinical caution,Outliers
+
+
+
+
+
+
+
+

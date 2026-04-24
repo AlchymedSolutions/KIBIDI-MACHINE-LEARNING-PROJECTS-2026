@@ -1,0 +1,537 @@
+---
+title: "ML ASS 1 LR CVD PREDICTION NEW"
+author: "KIBIDI"
+date: "2026-04-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Course: PROFFESIONAL CERTIFICATE IN DATA ANALYSIS,  MACHINE LEARNING AND AI
+Instructor: Lumumba W. Victor
+Email: lumumbavictor172@gmail.com
+
+student: KIBIDI LERENCER
+Reg no: CDAM/0047/2026
+Email: kabeyi24leren@gmail.com
+
+Date Issued: April , 2026
+
+```{r}
+ setwd("C:/Users/h6p/Desktop/ASSIGNMENTS")
+```
+
+3.1 Task 1: Data Import and Exploration (10 Marks)
+
+#3.1.1. Load all necessary libraries 
+```{r}
+library(tidyverse)# Data manipulation
+library(caret)# Unified ML interface
+library(pROC)# ROC analysis
+library(e1071)# SVM
+library(class)# KNN
+library(randomForest) # Random Forest
+library(dplyr)
+```
+
+
+#3.1.2. Import the dataset medical_data.csv.
+```{r}
+pressure <- read_csv("medical_data.csv")
+head(pressure)
+```
+
+
+
+#3.1.3a. Display the structure of the data 
+```{r}
+str(pressure)
+```
+
+
+
+#3.1.3b.summary statistics 
+```{r}
+summary(pressure)
+```
+
+#3.1.4a. Check for missing values and report the count per variable.
+```{r}
+colSums(is.na(pressure))
+```
+
+
+#3.1.4b) report the count and percentage per variable.
+```{r}
+missing_summary <- data.frame(
+  Variable = names(pressure),
+  Missing_Count = colSums(is.na(pressure)),
+  Missing_Percent = colMeans(is.na(pressure)) * 100
+)
+
+missing_summary
+```
+
+
+#3.1.4c)report sum of duplicates
+```{r}
+sum(duplicated(pressure))
+```
+
+
+#3.1.5a. Visualize the distribution of the target variable CVD using a bar plot.
+```{r}
+ggplot(pressure, aes(x = CVD, fill = CVD)) +
+  geom_bar() +
+  geom_text(stat = "count", 
+            aes(label = after_stat(count)), 
+            vjust = -0.5, size = 5) +
+  labs(title = "Bar Plot of Cardiovascular Disease", 
+       x = "Cardiovascular Disease Status (0 = No, 1 = Yes)", 
+       y = "Count") +
+  theme_bw() +
+  expand_limits(y = max(table(pressure$CVD)) * 1.2)  # ← Extend y-axis by 20%
+```
+
+
+
+#3.1.5b,visualize ouliers via box plots
+```{r}
+boxplot(pressure$age, main="Outliers_age")
+boxplot(pressure$gender, main="Outliers_gender")
+boxplot(pressure$bmi, main="Outliers_bmi")
+boxplot(pressure$blood_pressure, main="Outliers_blood_pressure")
+boxplot(pressure$cholesterol, main="Outliers_cholesterol")
+boxplot(pressure$glucose, main="Outliers_glucose")
+boxplot(pressure$smoking, main="Outliers_smoking")
+boxplot(pressure$alcohol, main="Outliers_alcohol")
+boxplot(pressure$physical_activity, main="Outliers_physical_activity")
+boxplot(pressure$family_history, main="Outliers_family_history")
+boxplot(pressure$stress_level, main="Outliers_stress_level")
+boxplot(pressure$heart_rate, main="Outliers_heart_rate")
+boxplot(pressure$sleep_hours, main="Outliers_sleep_hours")
+boxplot(pressure$medication_adherence, main="Outliers_medication_adherence")
+boxplot(pressure$urban_residence, main="Outliers_urban_residence")
+```
+
+
+
+
+3.2 Task 2: Data Preprocessing (15 Marks)
+#3.2.1. Handle missing values (justify your method: removal orimputation).
+```{r}
+pressure_clean <- na.omit(pressure)
+```
+Justification: Complete case analysis  to ensure modeltraining uses only verified patient records, training uses only verified patient records. If NA rate >5%, multiple imputation would be preferred in production.
+
+
+
+#3.2.2. Convert categorical variables (Gender, Smoking, Alcohol, Exercise, FamilyHistory,Medication) to factors.
+```{r}
+categorical_vars <- c("gender", "smoking", "alcohol","physical_activity",
+                      "family_history", "medication_adherence")
+
+pressure_clean[categorical_vars] <- lapply(pressure_clean[categorical_vars], as.factor)
+```
+
+
+#3.2.3. Ensure the target variable CVD is a factor with levels "No" (0) and "Yes" (1).
+```{r}
+pressure_clean$CVD <- factor(pressure_clean$CVD,
+                                 levels = c("No", "Yes"))
+```
+
+
+#3.2.4. Scale numeric predictors (mean = 0, sd = 1) using preProcess() from caret.
+#3.2.4a) site numerical variables
+```{r}
+numeric_vars <- names(pressure_clean)[sapply(pressure_clean, is.numeric)]
+numeric_vars
+```
+
+
+
+3.3 Task 3: Data Partitioning (10 Marks)
+
+#3.3.1. Set the seed to 2026 for reproducibility.
+#3.3.2. Split the data into 70% training and 30% testing using stratified sampling (to preserve class balance).Note: Fit the scaling parameters on the training data only
+```{r}
+# Set seed for reproducibility
+set.seed(2026)
+
+#Stratified 70/30 split
+train_index <- createDataPartition(pressure_clean$CVD, p = 0.7, list = FALSE)
+train_data  <- pressure_clean[train_index, ]
+test_data   <- pressure_clean[-train_index, ]
+
+#Scale numeric predictors (fit parameters on TRAINING data ONLY)
+preproc_params <- preProcess(train_data[, numeric_vars], method = c("center", "scale"))
+train_data[, numeric_vars] <- predict(preproc_params, train_data[, numeric_vars])
+test_data[, numeric_vars]  <- predict(preproc_params, test_data[, numeric_vars])
+```
+
+
+#3.2.4c)verify scaling using numerical variable 'age'
+```{r}
+cat("\n========== SCALING VERIFICATION ==========\n")
+cat("Original age - Mean:", mean(pressure_clean$age), "| SD:", sd(pressure_clean$age), "\n")
+cat("Training age (scaled) - Mean:", round(mean(train_data$age), 3), 
+    "| SD:", round(sd(train_data$age), 3), "\n")
+cat("Test age (scaled) - Mean:", round(mean(test_data$age), 3), 
+    "| SD:", round(sd(test_data$age), 3), "\n")
+
+cat("\nAll scaled variables (training data):\n")
+print(round(colMeans(train_data[, numeric_vars]), 3))
+print(round(apply(train_data[, numeric_vars], 2, sd), 3))
+```
+
+#3.3.3. Report the class distribution in both training and testing sets.
+#Report the class distribution in both training and testing sets
+```{r}
+dim(train_data)
+dim(test_data)
+
+cat("\n--- Training Set Distribution ---\n")
+print(prop.table(table(train_data$CVD)))
+cat("\n--- Test Set Distribution ---\n")
+print(prop.table(table(test_data$CVD)))
+```
+
+#3.2.4d. verify split sampling
+```{r}
+prop.table(table(train_data$CVD))
+prop.table(table(test_data$CVD))
+```
+
+
+
+#3.2.4e) Check stratification worked
+```{r}
+# Check stratification worked
+cat("\nStratification check - CVD proportion:\n")
+cat("Original:", round(prop.table(table(pressure_clean$CVD))[2] * 100, 1), "%\n")
+cat("Training:", round(prop.table(table(train_data$CVD))[2] * 100, 1), "%\n")
+cat("Testing:", round(prop.table(table(test_data$CVD))[2] * 100, 1), "%\n")
+```
+
+3.4 Task 4: Model Training with trainControl (20 Marks)
+#3.4.1. Define a trainControl scheme with 10-fold cross-validation.
+```{r}
+ctrl <- trainControl(
+  method = "cv", 
+  number = 10, 
+  classProbs = TRUE, 
+  summaryFunction = twoClassSummary,
+  savePredictions = "final"
+)
+```
+
+
+#3.4.2a. Train a Logistic Regression model using caret::train() with method "glm".
+```{r}
+set.seed(2026)
+
+model_lr <- train(
+  CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + family_history + stress_level + sleep_hours + urban_residence,
+  
+
+  data = train_data,                   # Logistic regression
+  method = "glm",                     # Binary classification             
+  trControl = ctrl,
+  family = binomial
+)
+
+print(model_lr)
+```
+
+#3.4.2b) summary results
+```{r}
+model_lr$results
+```
+
+
+#3.4.4a. Extract & display coefficients
+```{r}
+# Extract coefficients
+coef_vec <- coef(model_lr$finalModel)
+
+# Convert to data frame
+coef_df <- data.frame(
+  Variable = names(coef_vec),
+  Coefficient = as.numeric(coef_vec)
+)
+
+# Order from largest to smallest
+coef_df <- coef_df[order(coef_df$Coefficient, decreasing = TRUE), ]
+
+# Display
+cat("\n--- Coefficients (Largest to Smallest) ---\n")
+print(coef_df)
+```
+```{r}
+#Extract & prepare
+coef_vec <- coef(model_lr$finalModel)
+coef_df <- data.frame(
+  Variable = names(coef_vec),
+  Coefficient = as.numeric(coef_vec)
+)
+
+# Remove intercept
+coef_df <- subset(coef_df, Variable != "(Intercept)")
+
+# Order by importance
+coef_df <- coef_df[order(abs(coef_df$Coefficient), decreasing = TRUE), ]
+
+# Plot
+ggplot(coef_df, aes(x = reorder(Variable, Coefficient), y = Coefficient)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Logistic Regression Coefficients",
+       x = "Variables",
+       y = "Coefficient Value")
+```
+
+
+
+#3.4.3. Alternatively, fit a baseline model using base R glm() function.
+```{r}
+baseline_model <- glm(
+  CVD ~ age + gender + bmi + blood_pressure + cholesterol + 
+      glucose + smoking + alcohol + family_history + stress_level + sleep_hours + urban_residence,
+                      data = train_data, # Training data
+                      family = binomial) # Logistic regression
+
+# Display model summary
+summary(baseline_model)
+```
+
+#3.4.4b. Extract and report the model coefficients.
+```{r}
+cat("\n--- Model Coefficients ---\n")
+print(coef(baseline_model))
+```
+
+
+
+
+
+3.5 Task 5: Model Evaluation (25 Marks)
+#3.5.1. Predict the class and probabilities on the test set.
+```{r}
+pred_class <- predict(model_lr, newdata = test_data)
+pred_probs <- predict(model_lr, newdata = test_data, type = "prob")
+
+pred_probs
+```
+
+
+
+#3.5.2. Generate a Confusion Matrix and report:
+•Accuracy•Sensitivity (Recall)•Specificity•Kappa
+```{r}
+cm <- confusionMatrix(pred_class, test_data$CVD, positive = "Yes")
+cat("\n--- Confusion Matrix Metrics ---\n")
+cat(sprintf("Accuracy:   %.4f\n", cm$overall["Accuracy"]))
+cat(sprintf("Sensitivity (Recall): %.4f\n", cm$byClass["Sensitivity"]))
+cat(sprintf("Specificity: %.4f\n", cm$byClass["Specificity"]))
+cat(sprintf("Kappa:      %.4f\n", cm$overall["Kappa"]))
+print(cm)
+```
+
+#3.5.3. Plot the ROC Curve and calculate the AUC (Area Under Curve).
+```{r}
+roc_obj <- roc(test_data$CVD, pred_probs$Yes, levels = c("No", "Yes"), direction = "<")
+auc_val <- auc(roc_obj)
+cat("\nAUC (Area Under Curve):", round(auc_val, 4), "\n")
+
+plot(roc_obj, main = "ROC Curve for CVD Logistic Regression", 
+     col = "steelblue", lwd = 2, print.auc = TRUE, auc.polygon = TRUE, 
+     auc.polygon.col = "skyblue")
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+```
+
+#3.5.4a. Interpret the AUC value (e.g., poor, fair, good, excellent).
+
+
+
+#3.5.4b Threshold Optimization
+```{r}
+thresholds <- seq(0.10, 0.50, by = 0.05)
+thresh_results <- data.frame()
+
+for(t in thresholds) {
+  pred_t <- factor(ifelse(pred_probs$Yes > t, "Yes", "No"), levels = c("No", "Yes"))
+  cm_t   <- confusionMatrix(pred_t, test_data$CVD, positive = "Yes")
+  thresh_results <- rbind(thresh_results, data.frame(
+    Threshold   = t,
+    Sensitivity = cm_t$byClass["Sensitivity"],
+    Specificity = cm_t$byClass["Specificity"],
+    Accuracy    = cm_t$overall["Accuracy"],
+    Kappa       = cm_t$overall["Kappa"]
+  ))
+}
+
+print(thresh_results)
+```
+
+
+#3.5.4c. Visualize threshold trade-off
+```{r}
+thresh_results %>%
+  pivot_longer(cols = c(Sensitivity, Specificity), names_to = "Metric", values_to = "Value") %>%
+  ggplot(aes(x = Threshold, y = Value, color = Metric)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(title = "Sensitivity vs. Specificity Across Classification Thresholds",
+       x = "Probability Threshold", y = "Metric Value") +
+  theme_minimal()
+```
+
+
+3.6 Task 6: Interpretation (20 Marks)
+
+#3.6.2a. Calculate the Odds Ratios (OR) for these predictors (OR = eβ).
+```{r}
+# Extract Coefficients, P-values & Odds Ratios
+coefs_df <- summary(model_lr$finalModel)$coefficients %>%
+  as.data.frame() %>%
+  rownames_to_column("Predictor") %>%
+  filter(Predictor != "(Intercept)") %>%
+  mutate(Odds_Ratio = exp(Estimate)) %>%
+  arrange(`Pr(>|z|)`)
+
+print(coefs_df)
+```
+
+#3.6.2b. visualize Odds Ratios (OR) for these predictors (OR = eβ).
+```{r}
+odds_df <- summary(model_lr$finalModel)$coefficients %>%
+  as.data.frame() %>%
+  rownames_to_column("Predictor") %>%
+  filter(Predictor != "(Intercept)") %>%
+  mutate(Odds_Ratio = exp(Estimate)) %>%
+  select(Predictor, Odds_Ratio) %>%
+  arrange(desc(Odds_Ratio))   # largest → smallest
+
+
+ggplot(odds_df, aes(x = reorder(Predictor, Odds_Ratio), y = Odds_Ratio)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Odds Ratios (Ordered)",
+       x = "Predictors",
+       y = "Odds Ratio")
+```
+
+
+
+#3.6.1a. Select three significant predictors from your model.
+```{r}
+top_3 <- coefs_df %>% slice(1:3)
+cat("\n--- Top 3 Significant Predictors ---\n")
+print(top_3)
+```
+
+
+#3.6.1b. visualize top predictord of CVD
+```{r}
+# Extract & prepare odds ratios from your model
+top_preds <- summary(model_lr$finalModel)$coefficients %>%
+  as.data.frame() %>%
+  rownames_to_column("Predictor") %>%
+  filter(Predictor != "(Intercept)") %>%
+  mutate(OR = exp(Estimate)) %>%
+  slice_min(order_by = `Pr(>|z|)`, n = 5)  # Top 5 by p-value
+
+# Simple horizontal bar plot
+ggplot(top_preds, aes(x = reorder(Predictor, OR), y = OR)) +
+  geom_col(fill = "steelblue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  labs(title = "Top 5 CVD Predictors (Odds Ratios)",
+       x = "", y = "Odds Ratio") +
+  theme_minimal()
+```
+
+
+#3.6.3. Interpret the Odds Ratios in the context of CVD risk (e.g., "For every 1-unit increase in BMI, the odds of CVD increase by X%").
+"• For every 1-hour increase in sleep, the odds of CVD decrease by 54.5% (OR=0.455), holding other factors constant.
+• For every 1-unit increase in glucose, the odds of CVD increase by 106.7% (OR=2.07).
+• For every 1-unit increase in stress level, the odds of CVD increase by 82.2% (OR=1.82)."
+
+
+#3.6.4. Discuss any limitations of your model(assumptions,potentialbiases)
+#3.6.4a. Class Imbalance 
+If CVD positive cases are <20%, accuracy can be misleading. Kappa and Sensitivity are more reliable here.
+
+
+#3.6.4b Linearity Assumption
+Logistic regression assumes a linear relationship between log-odds and predictors. Non-linear effects (e.g., age vs. CVD risk) may require polynomial terms or splines.
+
+#3.6.4c Correlation/Multicollinearity
+Variables like SBP, DBP, and Cholesterol may be correlated. VIF checks or PCA could improve robustness.
+
+#3.6.4d. Generalizability
+Model performance depends on the dataset's demographic and clinical representativeness. External validation is recommended before clinical deployment.
+
+
+#3.7.1 Correlation Heatmap (Numeric Predictors)
+```{r}
+library(corrplot)
+numeric_df <- pressure_clean %>% select(where(is.numeric))
+cor_mat <- cor(numeric_df, use = "complete.obs")
+
+corrplot(cor_mat, method = "color", type = "upper", 
+         tl.cex = 0.8, tl.srt = 45, addCoef.col = "black",
+         title = "Correlation Matrix of Numeric Predictors", mar = c(0,0,2,0))
+```
+
+
+
+#3.7.3 Logistic Regression Coefficients (95% CI)
+```{r}
+# Extract coefficients + 95% CI
+coef_plot <- data.frame(
+  Predictor = names(coef(model_lr$finalModel))[-1],  # Remove intercept
+  Estimate = coef(model_lr$finalModel)[-1],
+  SE = summary(model_lr$finalModel)$coefficients[-1, 2]
+) %>%
+  mutate(
+    Lower = Estimate - 1.96 * SE,
+    Upper = Estimate + 1.96 * SE
+  ) %>%
+  arrange(Estimate)
+
+ggplot(coef_plot, aes(x = reorder(Predictor, Estimate), y = Estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  coord_flip() +
+  labs(title = "Logistic Regression Coefficients (95% CI)",
+       x = "", y = "Log-Odds Coefficient") +
+  theme_minimal()
+```
+
+
+#3.7.4 Predictor Importance Ranking (Absolute Coefficients)
+```{r}
+coef_importance <- data.frame(
+  Predictor = names(coef(model_lr$finalModel))[-1],
+  Abs_Coef = abs(coef(model_lr$finalModel)[-1])
+) %>%
+  arrange(desc(Abs_Coef)) %>%
+  slice(1:8)  # Top 8
+
+ggplot(coef_importance, aes(x = reorder(Predictor, Abs_Coef), y = Abs_Coef)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top Predictors by Absolute Coefficient Size",
+       x = "", y = "|Coefficient|") +
+  theme_minimal()
+```
+

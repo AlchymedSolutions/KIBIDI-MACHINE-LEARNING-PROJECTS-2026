@@ -1,0 +1,575 @@
+---
+title: "ML ASS 4 UL PENGUINS"
+author: "KIBIDI"
+date: "2026-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Course: PROFFESIONAL CERTIFICATE IN DATA ANALYSIS,  MACHINE LEARNING AND AI
+Instructor: Lumumba W. Victor
+Email: lumumbavictor172@gmail.com
+
+student: KIBIDI LERENCER
+Reg no: CDAM/0047/2026
+Email: kabeyi24leren@gmail.com
+
+Date Issued: April 13, 2026
+
+
+#set working directory
+```{r}
+setwd("C:/Users/h6p/Desktop/submit")
+```
+
+
+3.1 Task 1: Data Import and Exploration (10 Marks)
+#3.1.1. Load all necessary libraries (tidyverse, palmerpenguins, cluster, factoextra).
+```{r}
+library(tidyverse)      # Data manipulation andvisualization
+library(palmerpenguins) # Built-in penguins dataset
+library(cluster)        # Silhouette analysis
+library(factoextra)     # PCA and clustering visualization
+library(ggplot2)        # Advanced plotting
+library(dplyr)          # Data wrangling
+library(NbClust)
+library(mclust)
+```
+
+#3.1.2. Load th epenguins dataset using data("penguins", package = "palmerpenguins").
+```{r}
+data("penguins", package = "palmerpenguins")
+```
+
+
+#3.1.3a) Display the structure    
+```{r}
+ str(penguins)
+```
+
+
+#3.1.3b)summary statistics
+```{r}
+summary(penguins)
+```
+
+#3.1.4a) Check for missing values and report the count and percentage per variable.
+```{r}
+colSums(is.na(penguins))
+sum(is.na(penguins)) / (nrow(penguins) * ncol(penguins)) * 100
+```
+
+#3.1.4)summary of missing data
+```{r}
+missing_summary <- data.frame(
+  Variable = names(penguins),
+  Missing_Count = colSums(is.na(penguins)),
+  Missing_Percent = colMeans(is.na(penguins)) * 100
+)
+
+missing_summary
+```
+
+#3.1.5. Create a clean dataset by removing rows with missing values: .
+```{r}
+penguins_clean <-na.omit(penguins)
+dim(penguins_clean)
+```
+#3.1.5b)verify penguin clean has no  missing data
+```{r}
+missing_summary <- data.frame(
+  Variable = names(penguins_clean),
+  Missing_Count = colSums(is.na(penguins_clean)),
+  Missing_Percent = colMeans(is.na(penguins_clean)) * 100
+)
+
+missing_summary
+```
+
+
+
+3.2 Task 2: Data Preprocessing (15 Marks)
+
+#3.2.1. Select only numeric morphological variables for analysis:
+• bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g
+```{r}
+numeric_vars <- c("bill_length_mm", "bill_depth_mm","flipper_length_mm", "body_mass_g")
+ penguins_numeric <- penguins_clean[, numeric_vars]
+```
+
+
+#3.2.2. Scale these variables to mean = 0 and standard deviation = 1 using scale().
+#3.2.3. Create a new dataframe penguins_scaled containing only the scaled numeric variables.
+```{r}
+ penguins_scaled <- as.data.frame(scale(penguins_numeric))
+```
+
+
+
+#3.2.4. Verify scaling 
+```{r}
+colMeans(penguins_scaled) # Should be ~0
+apply(penguins_scaled, 2, sd) # Should be ~1
+```
+
+#3.2.5. Document why scaling is critical for K-Means and PCA
+K-Means and PCA use Euclidean distance; unscaled variables with larger ranges (e.g., body_mass_g) would dominate the
+analysis
+
+
+
+3.3 Task 3: Exploratory Data Visualization (10 Marks)
+
+#3.3.1. Create a scatterplot matrix of the four scaled numeric variables, coloredby the original species variable 
+```{r}
+ pairs(penguins_numeric,
+       col = as.numeric(penguins_clean$species),
+pch = 19, cex = 0.7,
+main = "Penguin Morphology: Pairs Plot")
+```
+
+#3.3.2. Generate boxplots for each numeric variable grouped by species to visualize between species differences.
+```{r}
+penguins_clean %>%
+  pivot_longer(cols = all_of(numeric_vars),
+               names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = species, y = value, fill = species)) +
+  geom_boxplot() +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal() +
+  labs(title = "Morphological Variables by Species")
+```
+
+#3.3.3. Compute and report the correlation matrix of the four numeric variables.
+```{r}
+ cor(penguins_numeric)
+```
+
+
+
+
+
+#3.3.4. Discuss which variables appear most useful for distinguishing groups
+
+
+
+3.4 Task 4: K-Means: Finding Optimal K (10 Marks)
+
+#3.4.1. Apply the elbow method: run K-Means for k = 1 to 10 and plot total within-clustersum of squares (WSS) vs. k.
+```{r}
+ set.seed(2026)
+
+# Elbow method
+wss <- map_dbl(1:10, ~{
+  kmeans(penguins_scaled, centers = .x, nstart = 25)$tot.withinss
+})
+
+plot(1:10, wss, type = "b", pch = 19,
+      xlab = "Number of Clusters (k)",
+      ylab = "Total Within-Cluster Sum of Squares",
+      main = "Elbow Method for Optimal k")
+```
+
+
+
+#3.4.2. Apply silhouette analysis: compute average silhouette width for k = 2 to 10 andplot results.
+```{r}
+# Silhouette analysis
+sil_width <- map_dbl(2:10, ~{
+  km <- kmeans(penguins_scaled, centers = .x, nstart = 25)
+  silhouette(km$cluster, dist(penguins_scaled)) %>%
+    summary() %>%
+    `[[`("avg.width")
+})
+
+plot(2:10, sil_width, type = "b", pch = 19,
+      xlab = "Number of Clusters (k)",
+      ylab = "Average Silhouette Width",
+      main = "Silhouette Analysis for Optimal k")
+```
+
+
+#3.4.2b. 
+```{r}
+ggplot(penguins_scaled, aes(x = bill_length_mm, y = bill_depth_mm, 
+                            color = penguins_clean$cluster)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(title = "K-Means Clusters: First Two Scaled Variables",
+       x = "Bill Length (scaled)", y = "Bill Depth (scaled)") +
+  theme_minimal()
+```
+
+#3.4.3. Based on both methods, justify your choice of optimal k.
+both elbow mwetod amd silhouette analysis identify a achangea at 3 thus the optimal k is 3
+
+
+#3.4.4. Report the total WSS and average silhouette width for your chosen k
+```{r}
+# Set seed for reproducibility
+set.seed(2026)
+
+# Fit K-Means with k=3
+k_opt <- 3
+km_model <- kmeans(penguins_scaled, centers = k_opt, nstart = 25)
+
+# Extract Total WSS
+total_wss <- km_model$tot.withinss
+cat("Total Within-Cluster Sum of Squares (WSS):", round(total_wss, 2), "\n")
+
+# Extract Average Silhouette Width
+sil <- silhouette(km_model$cluster, dist(penguins_scaled))
+avg_sil_width <- mean(sil[, 3])
+cat("Average Silhouette Width:", round(avg_sil_width, 3), "\n")
+```
+
+
+3.5 Task 5: K-Means: Model Fitting and Cluster Profiling (15 Marks)
+#3.5.1. Fit the final K-Means model using your optimal k and nstart = 25 for stability.
+```{r}
+set.seed(2026)
+k_opt <- 3
+km_model <- kmeans(penguins_scaled, centers = k_opt, nstart =25)
+```
+
+
+#3.5.2. Add the cluster assignments to the original penguins_clean dataframe.
+```{r}
+penguins_clean$cluster <- as.factor(km_model$cluster)
+str(penguins_clean)
+```
+
+
+#3.5.3. Compute cluster centroids (mean of each scaled variable per cluster).
+```{r}
+ km_model$centers
+```
+
+
+#3.5.4. Profile each cluster by computing mean values of original (unscaled) variables per cluster.
+#3.5.5. Create a table summarizing cluster characteristics (size, centroid values, dominant species if known).
+```{r}
+ penguins_clean %>%
+  group_by(cluster) %>%
+  summarise(across(all_of(numeric_vars), mean, na.rm = TRUE),
+            n = n())
+```
+
+
+
+
+
+#3.5.6. Visualize clusters using a scatter plot of the first two scaled variables, colored by cluster assignment.
+```{r}
+fviz_cluster(km_model, data = penguins_scaled,
+             geom = "point", ellipse.type = "norm",
+             palette = "jco", ggtheme = theme_minimal(),
+             main = "K-Means Clustering of Penguin Morphology")
+```
+
+#COUNTS
+```{r}
+table(penguins_clean$cluster)
+```
+
+
+3.6 Task 6: Principal Component Analysis (PCA) (15 Marks)
+
+#3.6.1. Perform PCA on the scaled numeric variables using prcomp().
+```{r}
+pca_result <- prcomp(penguins_scaled, center = TRUE, scale. =TRUE)
+
+# Summary and variance
+summary(pca_result)
+pca_result$sdev^2 / sum(pca_result$sdev^2) # Proportion of variance
+```
+
+#3.6.2. Generate and interpret the scree plot: report the proportion of variance explained by each PC.
+```{r}
+fviz_eig(pca_result, addlabels = TRUE, ylim = c(0, 80),
+         main = "Scree Plot: Variance Explained by PCs")
+```
+
+#3.6.3. Determine how many principal components are needed to explain at least 90% of total variance.
+```{r}
+var_prop <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+cum_var <- cumsum(var_prop)
+pcs_90 <- which(cum_var >= 0.90)[1]
+cat("PCs needed for ≥90% variance:", pcs_90, "\n")
+cat("Cumulative variance explained:", round(cum_var[pcs_90]*100, 2), "%\n")
+```
+
+
+
+
+
+#3.6.4. Extract and interpret the loadings (rotation matrix) for PC1 and PC2.
+```{r}
+pca_result$rotation[, 1:2]
+```
+
+
+
+
+#3.6.5. Create a biplot showing observations and variable loadings in PC1-PC2 space
+```{r}
+fviz_pca_biplot(pca_result,
+                label = "var", 
+                habillage = "none",
+                addEllipses = FALSE, 
+                col.var = "black",
+                repel = TRUE) +
+  ggtitle("PCA Biplot: PC1 vs PC2")
+```
+
+
+
+
+3.7 Task 7: Combining K-Means and PCA (15 Marks)
+
+#3.7.1. Project the scaled data onto the first two principal components.
+```{r}
+pca_scores <- as.data.frame(pca_result$x[, 1:2])
+colnames(pca_scores) <- c("PC1", "PC2")
+```
+
+
+
+#3.7.2. Re-run K-Means clustering on the first two PCs only (using your optimal k).
+```{r}
+set.seed(2026)
+km_pca <- kmeans(pca_scores, centers = k_opt, nstart = 25)
+
+```
+
+
+
+#3.7.3. Compare cluster assignments from PCA-reduced data vs. original 4-dimensionaldata (use a confusion matrix).
+```{r}
+ table(FullSpace = km_model$cluster, PCspace = km_pca$cluster)
+```
+
+
+
+
+#3.7.4. Create a scatter plot of PC1 vs. PC2, colored by:
+• K-Means cluster assignment (from full data)
+• Original species (for validation reference only)
+```{r}
+pca_scores$cluster_km <- as.factor(km_model$cluster)
+  ggplot(pca_scores, aes(x = PC1, y = PC2, color = cluster_km))+
+  geom_point(size = 2, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "PC1 vs PC2: Colored by K-Means Clusters (Full Data)")
+```
+
+#3.7.5. Discuss whether PCA preserves the cluster structure found in the full-dimensional space.
+```{r}
+pca_scores$species <- penguins_clean$species
+ ggplot(pca_scores, aes(x = PC1, y = PC2, color = species)) +
+   geom_point(size = 2, alpha = 0.7) +
+   theme_minimal() +
+   labs(title = "PC1 vs PC2: Colored by Species (Reference)")
+```
+
+
+
+
+
+
+3.8 Task 8: Cluster Validation and Quality Assessment (10 Marks)
+
+#3.8.1a) Compute internal validation metrics for your K-Means solution:
+```{r}
+sil <- silhouette(km_model$cluster, dist(penguins_scaled))
+   mean(sil[, 3]) # Average silhouette width
+   plot(sil, col = 1:k_opt, border = NA, main = "Silhouette Plot")
+```
+
+
+#3.8.1b)Average silhouette width•Dunn index (using cluster::dunn())
+```{r}
+#library(cluster)
+ #dunn_index <- dunn(penguins_scaled, cluster = km_model$cluster)
+ #dunn_index
+```
+
+
+#3.8.1b)Average silhouette width•Dunn index (using cluster::dunn()Manual Dunn Index function
+```{r}
+dunn_manual <- function(data, clusters) {
+  # Get unique clusters
+  cluster_ids <- unique(clusters)
+  k <- length(cluster_ids)
+  
+  # Calculate intra-cluster distances (within cluster)
+  intra_dists <- c()
+  for(i in 1:k) {
+    cluster_points <- data[clusters == cluster_ids[i], ]
+    if(nrow(cluster_points) > 1) {
+      dist_matrix <- as.matrix(dist(cluster_points))
+      intra_dists <- c(intra_dists, max(dist_matrix[upper.tri(dist_matrix)]))
+    } else {
+      intra_dists <- c(intra_dists, 0)
+    }
+  }
+  
+  # Calculate inter-cluster distances (between clusters)
+  inter_dists <- c()
+  for(i in 1:(k-1)) {
+    for(j in (i+1):k) {
+      cluster_i <- data[clusters == cluster_ids[i], ]
+      cluster_j <- data[clusters == cluster_ids[j], ]
+      
+      # Find minimum distance between clusters
+      dist_matrix <- as.matrix(dist(rbind(cluster_i, cluster_j)))
+      n_i <- nrow(cluster_i)
+      inter_min <- min(dist_matrix[1:n_i, (n_i+1):ncol(dist_matrix)])
+      inter_dists <- c(inter_dists, inter_min)
+    }
+  }
+  
+  # Dunn = min(inter) / max(intra)
+  dunn_value <- min(inter_dists) / max(intra_dists)
+  return(dunn_value)
+}
+
+# Calculate Dunn index
+dunn_index <- dunn_manual(penguins_scaled, km_model$cluster)
+print(dunn_index)
+```
+
+
+#3.8.1c)Calinski-Harabasz index (using factoextra::fviznbclust())
+```{r}
+ #fviz_nbclust(penguins_scaled, kmeans, method = "ch", k.max =10) +
+#  labs(title = "Calinski-Harabasz Index vs k")
+```
+
+
+#3.8.1c)Calinski-Harabasz index (using factoextra::fviznbclust())
+```{r}
+# Calculate Calinski-Harabasz index for k=2 to 10
+ch_results <- NbClust(data = penguins_scaled,
+                      method = "kmeans",
+                      index = "ch",
+                      min.nc = 2,
+                      max.nc = 10)
+
+# View results
+print(ch_results$All.index)
+```
+
+
+#3.8.2. Report these metrics and interpret their values (what indicates good clustering?)
+Silhouette (0.446) indicates weak-to-reasonable structure.   
+Dunn index (0.037) suggests moderate separation.
+CH index (427.8) supports the 3-cluster solution despite a peak at k=2.
+
+.
+#3.8.3. Optional: Compare metrics for k = 2,3,4 to confirm your choice of optimal k.
+k=3 ffrom elbow and Silhouette method
+
+
+#3.8.4. Discuss limitations of internal validation metrics
+Silhouette assumes spherical clusters - penguin data may have elongated shapes
+Dunn index sensitive to outliers - can be misleading with noisy data
+CH index favors convex clusters - may not capture complex natural groupings
+All internal metrics lack ground truth - should be complemented with biological validation
+
+
+
+
+Interpretation notes:Silhouette: >0.5 = reasonable, >0.7 = strong structure
+#- Dunn: higher = better separated, more compact clusters
+#- CH: higher = better clustering
+
+
+
+
+3.9 Task 9: Interpretation and Biological Insights (15 Marks)
+
+
+#3.9.2. Compare your discovered clusters to the known species labels (for validation only):
+compute a contingency table and discuss agreement.
+#3.9.1. Based on your clustering results, describe the morphological profile of each cluster ieCluster 1: small bill.
+```{r}
+table(penguins_clean$cluster, penguins_clean$species)
+
+library(mclust)
+adjustedRandIndex(penguins_clean$cluster, penguins_clean$
+species)
+
+```
+
+
+#3.9.3. Interpret the PCA loadings: which original variables contribute most to PC1 andPC2?
+```{r}
+ 
+loadings_df <- as.data.frame(pca_result$rotation[, 1:2])
+loadings_df$variable <- rownames(loadings_df)
+ print(loadings_df)
+
+```
+
+What biological meaning might these components have?
+
+#3.9.4. Discuss whether the clusters you found align with known biological groupings (species,island, sex).
+they did 3 clusters corresponding to Adelie, Chinstrap, Gentooin population size, features
+
+#3.9.5. Propose one ecological or conservation question that could be addressed using theseunsupervised learning results.
+# Example interpretation:
+If flipper_length and body_mass have high positive loadings on PC1,
+# then PC1 represents "overall body size"
+
+
+
+
+3.10 Task 10: Report Synthesis and Recommendations (15 Marks)
+
+#3.10.1. Summarize your complete workflow: data preparation, K-Means, PCA, validation.
+1.Ideentifying the main objective of the assignment
+2.Data Preparation
+3.K-Means Clustering:
+4.Principal Component Analysis:
+5. Validation
+6.interpretation 
+
+
+
+#3.10.2a. Answer: Did K-Means discover meaningful groups in the penguin data? 
+yes
+
+
+#3.10.2b. Justifyusing metrics and visualizations.
+scatter plot
+
+#3.10.3a. Answer: Was dimensionality reduction via PCA useful? 
+ PCA preserved cluster structure almost perfectly while reducing 4 dimensions to 2, enabling effective visualization and faster computation.
+
+
+#3.10.3b.Did it preserve clusterstructure?
+yes
+
+#3.10.4. Discuss trade-offs: When would you prefer clustering in original space vs. PCAreduced space?
+reduced space faster to analyse
+
+#3.10.5a. Provide recommendations for a wildlife biologist: 
+Scale data, good to remove ouliers, use multiplemrthods to determine k,
+
+
+#3.10.5b.How could these unsupervised methods help in field studies where species labels are unknown?it
+it would help classify those with similar features into a common clusters thus enabling labeling
+
+
+#3.10.6. Discuss limitations: What assumptions do K-Means and PCA make? How might violations affect your results?
+Silhouette assumes spherical clusters - penguin data may have elongated shapes
+Dunn index sensitive to outliers - can be misleading with noisy data
+CH index favors convex clusters - may not capture complex natural groupings
+All internal metrics lack ground truth - should be complemented with biological validation
+
+
+
